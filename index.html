@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Management Stok Sample</title>
+    <!-- Tailwind CSS CDN untuk styling yang responsif dan modern -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Pustaka untuk mengunduh file Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Warna latar belakang abu-abu terang */
+            transition: background-color 0.3s ease;
+        }
+        /* Style untuk modal backdrop */
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body class="antialiased text-gray-800">
+
+    <!-- Konten UI akan dimuat di sini oleh JavaScript -->
+    <div id="app-container" class="min-h-screen">
+        <!-- Main content will be rendered here by JavaScript -->
+    </div>
+
+    <script type="module">
+        // Inisialisasi variabel untuk menyimpan data
+        let products = [];
+        let stockInHistory = [];
+        let stockOutHistory = [];
+        let currentPage = 'dashboard';
+
+        const appContainer = document.getElementById('app-container');
+
+        // Fungsi untuk memuat data dari localStorage
+        const loadDataFromStorage = () => {
+            const storedProducts = localStorage.getItem('stockProducts');
+            const storedStockIn = localStorage.getItem('stockInHistory');
+            const storedStockOut = localStorage.getItem('stockOutHistory');
+            
+            if (storedProducts) products = JSON.parse(storedProducts);
+            if (storedStockIn) stockInHistory = JSON.parse(storedStockIn);
+            if (storedStockOut) stockOutHistory = JSON.parse(storedStockOut);
+        };
+
+        // Fungsi untuk menyimpan data ke localStorage
+        const saveDataToStorage = () => {
+            localStorage.setItem('stockProducts', JSON.stringify(products));
+            localStorage.setItem('stockInHistory', JSON.stringify(stockInHistory));
+            localStorage.setItem('stockOutHistory', JSON.stringify(stockOutHistory));
+        };
+
+        // Fungsi untuk menampilkan notifikasi kustom, menggantikan alert()
+        const showCustomAlert = (message, type) => {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `fixed bottom-4 right-4 p-4 rounded-lg shadow-lg text-white transition-opacity duration-300 ${type === 'success' ? 'bg-green-500' : 'bg-red-500'}`;
+            alertDiv.textContent = message;
+            appContainer.appendChild(alertDiv);
+            setTimeout(() => {
+                alertDiv.style.opacity = '0';
+                setTimeout(() => alertDiv.remove(), 300);
+            }, 5000);
+        };
+
+        // Fungsi untuk memperbarui stok produk
+        const updateProductStock = (productData, qtyChange) => {
+            const productIndex = products.findIndex(p => p.namaProduk === productData.namaProduk && p.jenisSample === productData.jenisSample);
+
+            if (productIndex !== -1) {
+                products[productIndex].qtyStok = Math.max(0, products[productIndex].qtyStok + qtyChange);
+                const newQty = products[productIndex].qtyStok;
+
+                // Peringatan stok rendah
+                if (newQty > 0 && newQty <= 10) {
+                    showCustomAlert(`PERINGATAN: Stok ${productData.namaProduk} (${productData.jenisSample}) tersisa ${newQty}!`, 'error');
+                } else if (newQty === 0) {
+                     showCustomAlert(`PERINGATAN KRITIS: Stok ${productData.namaProduk} (${productData.jenisSample}) telah habis!`, 'error');
+                }
+            } else if (qtyChange > 0) {
+                // Jika produk belum ada dan ini adalah stok masuk, tambahkan produk baru
+                products.push({
+                    namaProduk: productData.namaProduk,
+                    jenisSample: productData.jenisSample,
+                    qtyStok: qtyChange
+                });
+            } else {
+                console.error("Produk tidak ditemukan saat mencoba mengurangi stok.");
+                showCustomAlert("Gagal mengurangi stok. Produk tidak ditemukan.", 'error');
+            }
+            saveDataToStorage();
+        };
+
+        // Handler untuk form stok masuk
+        const handleStockInSubmit = (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const tanggal = form.querySelector('#tanggal-in').value;
+            const pengirim = form.querySelector('#pengirim-in').value;
+            const items = [];
+            form.querySelectorAll('.item-input-group').forEach(group => {
+                const namaProduk = group.querySelector('.nama-produk').value;
+                const jenisSample = group.querySelector('.jenis-sample').value;
+                const qty = parseInt(group.querySelector('.qty').value) || 0;
+                if (namaProduk && jenisSample && qty > 0) {
+                    items.push({ namaProduk, jenisSample, qty });
+                }
+            });
+
+            if (!tanggal || !pengirim || items.length === 0) {
+                showCustomAlert('Harap lengkapi semua data dengan benar.', 'error');
+                return;
+            }
+
+            const newEntry = { tanggal, pengirim, items, timestamp: new Date().toISOString() };
+            stockInHistory.unshift(newEntry);
+            
+            for (const item of items) {
+                updateProductStock(item, item.qty);
+            }
+            saveDataToStorage();
+            renderPageContent(); // Render ulang untuk memperbarui riwayat
+            showCustomAlert('Stok masuk berhasil disimpan!', 'success');
+            form.reset();
+            const container = document.getElementById('stock-in-items-container');
+            container.innerHTML = '';
+            addStockItem('stock-in-items-container');
+        };
+
+        // Handler untuk form stok keluar
+        const handleStockOutSubmit = (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const tanggal = form.querySelector('#tanggal-out').value;
+            const namaPIC = form.querySelector('#nama-pic').value;
+            const tujuan = form.querySelector('#tujuan').value;
+            
+            const outflowData = {
+                tanggal,
+                namaPIC,
+                tujuan,
+                items: [],
+                timestamp: new Date().toISOString()
+            };
+
+            if (tujuan === 'Customer') {
+                outflowData.namaCustomer = form.querySelector('#nama-customer').value;
+                outflowData.alamatCustomer = form.querySelector('#alamat-customer').value;
+            } else if (tujuan === 'Lain-lain') {
+                outflowData.deskripsiLain = form.querySelector('#deskripsi-lain').value;
+            }
+
+            const items = [];
+            let hasError = false;
+            form.querySelectorAll('.item-input-group').forEach(group => {
+                const namaProduk = group.querySelector('.nama-produk').value;
+                const jenisSample = group.querySelector('.jenis-sample').value;
+                const qty = parseInt(group.querySelector('.qty').value) || 0;
+                
+                if (namaProduk && jenisSample && qty > 0) {
+                    const productInStock = products.find(p => p.namaProduk === namaProduk && p.jenisSample === jenisSample);
+                    if (!productInStock || productInStock.qtyStok < qty) {
+                        showCustomAlert(`Stok ${namaProduk} (${jenisSample}) tidak mencukupi. Stok tersedia: ${productInStock ? productInStock.qtyStok : 0}`, 'error');
+                        hasError = true;
+                    }
+                    items.push({ namaProduk, jenisSample, qty });
+                }
+            });
+
+            if (hasError || !tanggal || !namaPIC || items.length === 0) {
+                showCustomAlert('Harap lengkapi semua data dengan benar dan pastikan stok mencukupi.', 'error');
+                return;
+            }
+            outflowData.items = items;
+            stockOutHistory.unshift(outflowData);
+
+            for (const item of items) {
+                updateProductStock(item, -item.qty);
+            }
+            saveDataToStorage();
+            renderPageContent(); // Render ulang untuk memperbarui riwayat
+            showCustomAlert('Stok keluar berhasil disimpan!', 'success');
+            form.reset();
+            const container = document.getElementById('stock-out-items-container');
+            container.innerHTML = '';
+            addStockItem('stock-out-items-container', products);
+        };
+
+        // Fungsi untuk menambahkan item input baru di form
+        const addStockItem = (containerId, productsList = null) => {
+            const container = document.getElementById(containerId);
+            const div = document.createElement('div');
+            div.className = 'item-input-group grid grid-cols-1 md:grid-cols-4 gap-4 p-4 border rounded-lg bg-gray-50 mb-4';
+            div.innerHTML = `
+                <div class="md:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700">Nama Produk</label>
+                    ${productsList ? `
+                        <select name="namaProduk" class="nama-produk mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                            <option value="">Pilih Produk</option>
+                            ${productsList.map(p => `<option value="${p.namaProduk}" data-jenis="${p.jenisSample}">${p.namaProduk} (${p.jenisSample})</option>`).join('')}
+                        </select>
+                    ` : `
+                        <input type="text" name="namaProduk" class="nama-produk mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" />
+                    `}
+                </div>
+                <div class="md:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700">Jenis Sample</label>
+                    <input type="text" name="jenisSample" class="jenis-sample mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" ${productsList ? 'readonly' : ''} />
+                </div>
+                <div class="md:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700">Jumlah (QTY)</label>
+                    <input type="number" name="qty" class="qty mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" min="1" />
+                </div>
+                <div class="md:col-span-1 flex items-end">
+                    <button type="button" class="w-full md:w-auto px-4 py-2 bg-red-500 text-white rounded-md shadow-sm hover:bg-red-600 transition-colors duration-200 remove-item-btn">Hapus</button>
+                </div>
+            `;
+            container.appendChild(div);
+
+            div.querySelector('.remove-item-btn').addEventListener('click', () => div.remove());
+
+            if (productsList) {
+                div.querySelector('.nama-produk').addEventListener('change', (e) => {
+                    const selectedOption = e.target.options[e.target.selectedIndex];
+                    const jenisSampleInput = div.querySelector('.jenis-sample');
+                    if (selectedOption && selectedOption.value) {
+                        jenisSampleInput.value = selectedOption.dataset.jenis;
+                    } else {
+                        jenisSampleInput.value = '';
+                    }
+                });
+            }
+        };
+
+        // Fungsi untuk merender tampilan dashboard
+        const renderDashboard = () => {
+            const sortedProducts = [...products].sort((a, b) => a.namaProduk.localeCompare(b.namaProduk));
+            return `
+                <div class="bg-white p-6 rounded-xl shadow-lg">
+                    <h2 class="text-2xl font-semibold mb-6">Jumlah Stok Sample</h2>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full bg-white rounded-lg">
+                            <thead>
+                                <tr class="bg-gray-200 text-gray-600 uppercase text-sm leading-normal">
+                                    <th class="py-3 px-6 text-left">Nama Produk</th>
+                                    <th class="py-3 px-6 text-left">Jenis Sample</th>
+                                    <th class="py-3 px-6 text-center">QTY Stok</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-gray-600 text-sm font-light">
+                                ${sortedProducts.length > 0 ? (
+                                    sortedProducts.map(product => `
+                                        <tr class="border-b border-gray-200 hover:bg-gray-100 transition-colors duration-200 ${
+                                            product.qtyStok <= 10 ? 'bg-red-100 text-red-700 font-bold' : ''
+                                        }">
+                                            <td class="py-3 px-6 text-left whitespace-nowrap"><span class="font-medium">${product.namaProduk}</span></td>
+                                            <td class="py-3 px-6 text-left"><span>${product.jenisSample}</span></td>
+                                            <td class="py-3 px-6 text-center"><span class="py-1 px-3 rounded-full text-xs font-bold">${product.qtyStok}</span></td>
+                                        </tr>
+                                    `).join('')
+                                ) : `
+                                    <tr>
+                                        <td colspan="3" class="py-4 text-center text-gray-500">Tidak ada data produk.</td>
+                                    </tr>
+                                `}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        };
+
+        // Fungsi untuk merender tampilan stok masuk
+        const renderStockInForm = () => {
+            const sortedHistory = [...stockInHistory].sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
+            return `
+                <div class="bg-white p-6 rounded-xl shadow-lg max-w-4xl mx-auto">
+                    <h2 class="text-2xl font-semibold mb-6">Input Stok Masuk</h2>
+                    <form id="stock-in-form" class="space-y-4">
+                        <div>
+                            <label for="tanggal-in" class="block text-sm font-medium text-gray-700">Tanggal Datang Pengiriman</label>
+                            <input type="date" id="tanggal-in" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" />
+                        </div>
+                        <div>
+                            <label for="pengirim-in" class="block text-sm font-medium text-gray-700">Nama Pengirim</label>
+                            <input type="text" id="pengirim-in" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" />
+                        </div>
+                        <div class="space-y-4">
+                            <h3 class="text-lg font-medium text-gray-700">Barang yang Dikirim</h3>
+                            <div id="stock-in-items-container"></div>
+                            <button type="button" id="add-stock-in-item-btn" class="w-full md:w-auto px-4 py-2 bg-indigo-500 text-white rounded-md shadow-sm hover:bg-indigo-600 transition-colors duration-200">Tambah Barang</button>
+                        </div>
+                        <div>
+                            <button type="submit" class="w-full md:w-auto px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg shadow-md hover:bg-indigo-700 transition-colors duration-200">Simpan</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl shadow-lg mt-8">
+                    <h2 class="text-2xl font-semibold mb-6">Alur Stok Masuk</h2>
+                    <div class="overflow-y-auto max-h-80">
+                        <table class="min-w-full bg-white">
+                            <thead>
+                                <tr class="bg-gray-200 text-gray-600 uppercase text-sm leading-normal">
+                                    <th class="py-3 px-6 text-left">Tanggal</th>
+                                    <th class="py-3 px-6 text-left">Pengirim</th>
+                                    <th class="py-3 px-6 text-left">Produk</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-gray-600 text-sm font-light">
+                                ${sortedHistory.length > 0 ? (
+                                    sortedHistory.map(entry => `
+                                        <tr class="border-b border-gray-200">
+                                            <td class="py-3 px-6 whitespace-nowrap">${entry.tanggal}</td>
+                                            <td class="py-3 px-6">${entry.pengirim}</td>
+                                            <td class="py-3 px-6">
+                                                ${entry.items.map(item => `<div>${item.namaProduk} (${item.jenisSample}) - Qty: ${item.qty}</div>`).join('')}
+                                            </td>
+                                        </tr>
+                                    `).join('')
+                                ) : `
+                                    <tr>
+                                        <td colspan="3" class="py-4 text-center text-gray-500">Tidak ada riwayat.</td>
+                                    </tr>
+                                `}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        };
+
+        // Fungsi untuk merender tampilan stok keluar
+        const renderStockOutForm = () => {
+            const productOptions = products.map(p => `<option value="${p.namaProduk}" data-jenis="${p.jenisSample}">${p.namaProduk} (${p.jenisSample})</option>`).join('');
+            const sortedHistory = [...stockOutHistory].sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
+            
+            return `
+                <div class="bg-white p-6 rounded-xl shadow-lg max-w-4xl mx-auto">
+                    <h2 class="text-2xl font-semibold mb-6">Input Stok Keluar</h2>
+                    <form id="stock-out-form" class="space-y-4">
+                        <div>
+                            <label for="tanggal-out" class="block text-sm font-medium text-gray-700">Tanggal</label>
+                            <input type="date" id="tanggal-out" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" />
+                        </div>
+                        <div>
+                            <label for="nama-pic" class="block text-sm font-medium text-gray-700">Nama PIC</label>
+                            <input type="text" id="nama-pic" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" />
+                        </div>
+                        <div>
+                            <label for="tujuan" class="block text-sm font-medium text-gray-700">Untuk Apa?</label>
+                            <select id="tujuan" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                                <option value="Chef">Chef</option>
+                                <option value="Customer">Customer</option>
+                                <option value="Lain-lain">Lain-lain</option>
+                            </select>
+                        </div>
+                        <div id="additional-fields"></div>
+                        <div class="space-y-4">
+                            <h3 class="text-lg font-medium text-gray-700">Barang yang Keluar</h3>
+                            <div id="stock-out-items-container"></div>
+                            <button type="button" id="add-stock-out-item-btn" class="w-full md:w-auto px-4 py-2 bg-indigo-500 text-white rounded-md shadow-sm hover:bg-indigo-600 transition-colors duration-200">Tambah Barang</button>
+                        </div>
+                        <div>
+                            <button type="submit" class="w-full md:w-auto px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg shadow-md hover:bg-indigo-700 transition-colors duration-200">Simpan</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl shadow-lg mt-8">
+                    <h2 class="text-2xl font-semibold mb-6">Alur Stok Keluar</h2>
+                    <div class="overflow-y-auto max-h-80">
+                        <table class="min-w-full bg-white">
+                            <thead>
+                                <tr class="bg-gray-200 text-gray-600 uppercase text-sm leading-normal">
+                                    <th class="py-3 px-6 text-left">Tanggal</th>
+                                    <th class="py-3 px-6 text-left">PIC</th>
+                                    <th class="py-3 px-6 text-left">Tujuan</th>
+                                    <th class="py-3 px-6 text-left">Produk</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-gray-600 text-sm font-light">
+                                ${sortedHistory.length > 0 ? (
+                                    sortedHistory.map(entry => `
+                                        <tr class="border-b border-gray-200">
+                                            <td class="py-3 px-6 whitespace-nowrap">${entry.tanggal}</td>
+                                            <td class="py-3 px-6">${entry.namaPIC}</td>
+                                            <td class="py-3 px-6">
+                                                ${entry.tujuan === 'Customer' ? `${entry.tujuan}: ${entry.namaCustomer}` : entry.tujuan === 'Lain-lain' ? `${entry.tujuan}: ${entry.deskripsiLain}` : entry.tujuan}
+                                            </td>
+                                            <td class="py-3 px-6">
+                                                ${entry.items.map(item => `<div>${item.namaProduk} (${item.jenisSample}) - Qty: ${item.qty}</div>`).join('')}
+                                            </td>
+                                        </tr>
+                                    `).join('')
+                                ) : `
+                                    <tr>
+                                        <td colspan="4" class="py-4 text-center text-gray-500">Tidak ada riwayat.</td>
+                                    </tr>
+                                `}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        };
+        
+        // Fungsi untuk mengunduh semua data ke dalam satu file Excel dengan tiga tab
+        const downloadAllDataToSingleExcel = () => {
+            if (products.length === 0 && stockInHistory.length === 0 && stockOutHistory.length === 0) {
+                showCustomAlert('Tidak ada data untuk diunduh.', 'error');
+                return;
+            }
+
+            // Buat workbook baru
+            const wb = XLSX.utils.book_new();
+
+            // 1. Buat sheet untuk Stok Produk
+            const productsToExport = products.map(p => ({
+                'Nama Produk': p.namaProduk,
+                'Jenis Sample': p.jenisSample,
+                'Kuantitas Stok': p.qtyStok
+            }));
+            const wsProducts = XLSX.utils.json_to_sheet(productsToExport);
+            XLSX.utils.book_append_sheet(wb, wsProducts, "Stok Sample");
+
+            // 2. Buat sheet untuk Riwayat Stok Masuk
+            const stockInToExport = [];
+            stockInHistory.forEach(entry => {
+                entry.items.forEach(item => {
+                    stockInToExport.push({
+                        'Tanggal': entry.tanggal,
+                        'Pengirim': entry.pengirim,
+                        'Nama Produk': item.namaProduk,
+                        'Jenis Sample': item.jenisSample,
+                        'Kuantitas': item.qty
+                    });
+                });
+            });
+            const wsStockIn = XLSX.utils.json_to_sheet(stockInToExport);
+            XLSX.utils.book_append_sheet(wb, wsStockIn, "Alur Stok Masuk");
+
+            // 3. Buat sheet untuk Riwayat Stok Keluar
+            const stockOutToExport = [];
+            stockOutHistory.forEach(entry => {
+                entry.items.forEach(item => {
+                    const baseEntry = {
+                        'Tanggal': entry.tanggal,
+                        'Nama PIC': entry.namaPIC,
+                        'Tujuan': entry.tujuan,
+                        'Nama Produk': item.namaProduk,
+                        'Jenis Sample': item.jenisSample,
+                        'Kuantitas': item.qty
+                    };
+                    if (entry.tujuan === 'Customer') {
+                        baseEntry['Nama Customer'] = entry.namaCustomer;
+                        baseEntry['Alamat Customer'] = entry.alamatCustomer;
+                    } else if (entry.tujuan === 'Lain-lain') {
+                        baseEntry['Deskripsi'] = entry.deskripsiLain;
+                    }
+                    stockOutToExport.push(baseEntry);
+                });
+            });
+            const wsStockOut = XLSX.utils.json_to_sheet(stockOutToExport);
+            XLSX.utils.book_append_sheet(wb, wsStockOut, "Alur Stok Keluar");
+            
+            // Tulis dan simpan file Excel
+            const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            saveAs(new Blob([wbout], { type: 'application/octet-stream' }), "Data_Stok_Sample_Management.xlsx");
+        };
+
+        // Fungsi utama untuk merender keseluruhan UI
+        const renderAppLayout = () => {
+            const html = `
+                <header class="bg-white shadow-md sticky top-0 z-50">
+                    <nav class="container mx-auto px-4 py-3 flex flex-col sm:flex-row justify-between items-center">
+                        <div class="flex items-center space-x-4 mb-2 sm:mb-0">
+                            <div class="text-2xl font-bold text-indigo-600">
+                                Management Stok Sample
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap justify-center sm:justify-start items-center space-x-2 sm:space-x-4">
+                            <button data-page="dashboard" class="nav-btn px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${currentPage === 'dashboard' ? 'bg-indigo-500 text-white shadow-md' : 'text-gray-700 hover:bg-gray-200'}">
+                                Dashboard
+                            </button>
+                            <button data-page="stock-out" class="nav-btn px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${currentPage === 'stock-out' ? 'bg-indigo-500 text-white shadow-md' : 'text-gray-700 hover:bg-gray-200'}">
+                                ORDER NOW!
+                            </button>
+                            <button data-page="stock-in" class="nav-btn px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${currentPage === 'stock-in' ? 'bg-indigo-500 text-white shadow-md' : 'text-gray-700 hover:bg-gray-200'}">
+                                Stok Masuk
+                            </button>
+                        </div>
+                        <div class="mt-4 sm:mt-0">
+                            <button id="download-excel-btn" class="px-6 py-2 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700 transition-colors duration-200">
+                                Excel
+                            </button>
+                        </div>
+                    </nav>
+                </header>
+                <main class="container mx-auto px-4 py-8" id="main-content">
+                    <!-- Konten akan dimuat di sini -->
+                </main>
+            `;
+            appContainer.innerHTML = html;
+            addNavListeners();
+            renderPageContent();
+        };
+
+        // Fungsi untuk merender konten halaman yang aktif
+        const renderPageContent = () => {
+            const mainContent = document.getElementById('main-content');
+            if (!mainContent) return;
+            
+            let content = '';
+            if (currentPage === 'dashboard') {
+                content = renderDashboard();
+            } else if (currentPage === 'stock-in') {
+                content = renderStockInForm();
+            } else if (currentPage === 'stock-out') {
+                content = renderStockOutForm();
+            }
+            mainContent.innerHTML = content;
+            setupPageListeners();
+        };
+
+        // Menambahkan event listener ke tombol navigasi
+        const addNavListeners = () => {
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    currentPage = btn.dataset.page;
+                    document.querySelectorAll('.nav-btn').forEach(b => {
+                        b.classList.remove('bg-indigo-500', 'text-white', 'shadow-md');
+                        b.classList.add('text-gray-700', 'hover:bg-gray-200');
+                    });
+                    btn.classList.add('bg-indigo-500', 'text-white', 'shadow-md');
+                    btn.classList.remove('hover:bg-gray-200');
+                    renderPageContent();
+                });
+            });
+            // Listener untuk tombol unduh Excel yang baru
+            document.getElementById('download-excel-btn').addEventListener('click', downloadAllDataToSingleExcel);
+        };
+
+        // Menyiapkan listener spesifik untuk setiap halaman
+        const setupPageListeners = () => {
+            if (currentPage === 'stock-in') {
+                document.getElementById('stock-in-form').addEventListener('submit', handleStockInSubmit);
+                document.getElementById('add-stock-in-item-btn').addEventListener('click', () => addStockItem('stock-in-items-container'));
+                addStockItem('stock-in-items-container'); // Tambahkan satu item default
+            } else if (currentPage === 'stock-out') {
+                document.getElementById('stock-out-form').addEventListener('submit', handleStockOutSubmit);
+                document.getElementById('add-stock-out-item-btn').addEventListener('click', () => addStockItem('stock-out-items-container', products));
+                
+                // Tambahkan listener untuk perubahan tujuan
+                document.getElementById('tujuan').addEventListener('change', (e) => {
+                    const additionalFields = document.getElementById('additional-fields');
+                    additionalFields.innerHTML = '';
+                    if (e.target.value === 'Customer') {
+                        additionalFields.innerHTML = `
+                            <div>
+                                <label for="nama-customer" class="block text-sm font-medium text-gray-700">Nama Customer</label>
+                                <input type="text" id="nama-customer" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" />
+                            </div>
+                            <div>
+                                <label for="alamat-customer" class="block text-sm font-medium text-gray-700">Alamat Customer</label>
+                                <input type="text" id="alamat-customer" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" />
+                            </div>
+                        `;
+                    } else if (e.target.value === 'Lain-lain') {
+                        additionalFields.innerHTML = `
+                            <div>
+                                <label for="deskripsi-lain" class="block text-sm font-medium text-gray-700">Deskripsi</label>
+                                <textarea id="deskripsi-lain" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"></textarea>
+                            </div>
+                        `;
+                    }
+                });
+                addStockItem('stock-out-items-container', products); // Tambahkan satu item default
+            }
+        };
+
+        // Mulai aplikasi saat jendela dimuat
+        window.onload = () => {
+            loadDataFromStorage();
+            renderAppLayout();
+        };
+    </script>
+</body>
+</html>
