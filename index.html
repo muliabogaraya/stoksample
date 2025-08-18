@@ -3,20 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Management Stok Sample</title>
-    <!-- Tailwind CSS CDN untuk styling yang responsif dan modern -->
+    <title>Manajemen Stok Sampel</title>
+    <!-- Tailwind CSS CDN for responsive and modern styling -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Pustaka untuk mengunduh file Excel -->
+    <!-- Library for downloading Excel files -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #f3f4f6; /* Warna latar belakang abu-abu terang */
+            background-color: #f3f4f6;
             transition: background-color 0.3s ease;
         }
-        /* Style untuk modal backdrop */
         .modal-backdrop {
             position: fixed;
             top: 0;
@@ -33,39 +32,70 @@
 </head>
 <body class="antialiased text-gray-800">
 
-    <!-- Konten UI akan dimuat di sini oleh JavaScript -->
+    <!-- Main UI content will be loaded here by JavaScript -->
     <div id="app-container" class="min-h-screen">
-        <!-- Main content will be rendered here by JavaScript -->
+        <div class="flex items-center justify-center min-h-screen">
+            <div class="text-center">
+                <svg class="animate-spin h-10 w-10 text-indigo-500 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="mt-4 text-lg text-gray-600">Memuat aplikasi...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Login Modal -->
+    <div id="login-modal" class="modal-backdrop hidden">
+        <div class="relative bg-white rounded-lg p-8 shadow-xl w-full max-w-sm">
+            <!-- Close button for the modal -->
+            <button id="close-login-modal" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+            <h3 class="text-2xl font-bold text-center text-gray-800 mb-6">Login Admin</h3>
+            <form id="login-form">
+                <div class="mb-4">
+                    <label for="admin-username" class="block text-sm font-medium text-gray-700">Username</label>
+                    <input type="text" id="admin-username" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 p-2" required />
+                </div>
+                <div class="mb-6">
+                    <label for="admin-password" class="block text-sm font-medium text-gray-700">Password</label>
+                    <input type="password" id="admin-password" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 p-2" required />
+                </div>
+                <p id="login-error" class="text-sm text-red-500 text-center mb-4 hidden">Username atau password salah.</p>
+                <button type="submit" class="w-full px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg shadow-md hover:bg-indigo-700 transition-colors duration-200">Login</button>
+            </form>
+        </div>
     </div>
 
     <script type="module">
-        // Inisialisasi variabel untuk menyimpan data
+        // Import Firebase modules
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, addDoc, serverTimestamp, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase configuration and initialization
+        // Global variables provided by the Canvas environment
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let app, db, auth, userId;
         let products = [];
         let stockInHistory = [];
         let stockOutHistory = [];
         let currentPage = 'dashboard';
+        let isAuthReady = false;
+        let isAdminAuthenticated = false; // New state to track admin login status
 
         const appContainer = document.getElementById('app-container');
+        const loginModal = document.getElementById('login-modal');
+        const loginForm = document.getElementById('login-form');
+        const loginError = document.getElementById('login-error');
 
-        // Fungsi untuk memuat data dari localStorage
-        const loadDataFromStorage = () => {
-            const storedProducts = localStorage.getItem('stockProducts');
-            const storedStockIn = localStorage.getItem('stockInHistory');
-            const storedStockOut = localStorage.getItem('stockOutHistory');
-            
-            if (storedProducts) products = JSON.parse(storedProducts);
-            if (storedStockIn) stockInHistory = JSON.parse(storedStockIn);
-            if (storedStockOut) stockOutHistory = JSON.parse(storedStockOut);
-        };
-
-        // Fungsi untuk menyimpan data ke localStorage
-        const saveDataToStorage = () => {
-            localStorage.setItem('stockProducts', JSON.stringify(products));
-            localStorage.setItem('stockInHistory', JSON.stringify(stockInHistory));
-            localStorage.setItem('stockOutHistory', JSON.stringify(stockOutHistory));
-        };
-
-        // Fungsi untuk menampilkan notifikasi kustom, menggantikan alert()
+        // Function to show custom alerts instead of `alert()`
         const showCustomAlert = (message, type) => {
             const alertDiv = document.createElement('div');
             alertDiv.className = `fixed bottom-4 right-4 p-4 rounded-lg shadow-lg text-white transition-opacity duration-300 ${type === 'success' ? 'bg-green-500' : 'bg-red-500'}`;
@@ -77,73 +107,130 @@
             }, 5000);
         };
 
-        // Fungsi untuk memperbarui stok produk
-        const updateProductStock = (productData, qtyChange) => {
-            const productIndex = products.findIndex(p => p.namaProduk === productData.namaProduk && p.jenisSample === productData.jenisSample);
+        // Function to show the login modal
+        const showLoginModal = () => {
+            loginModal.classList.remove('hidden');
+        };
 
-            if (productIndex !== -1) {
-                products[productIndex].qtyStok = Math.max(0, products[productIndex].qtyStok + qtyChange);
-                const newQty = products[productIndex].qtyStok;
+        // Function to hide the login modal
+        const hideLoginModal = () => {
+            loginModal.classList.add('hidden');
+            loginForm.reset();
+            loginError.classList.add('hidden');
+        };
 
-                // Peringatan stok rendah
+        // Function to handle the admin login
+        const handleAdminLogin = (e) => {
+            e.preventDefault();
+            const username = document.getElementById('admin-username').value;
+            const password = document.getElementById('admin-password').value;
+
+            if (username === 'admin' && password === '12345') {
+                isAdminAuthenticated = true;
+                hideLoginModal();
+                // After successful login, navigate to the admin page
+                currentPage = 'admin-page';
+                renderAppLayout();
+            } else {
+                loginError.classList.remove('hidden');
+            }
+        };
+        
+        // Function to update a product's stock in Firestore
+        const updateProductStock = async (productData, qtyChange) => {
+            if (!isAuthReady) return;
+            
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'products', `${productData.namaProduk}_${productData.jenisSample}`);
+            
+            try {
+                const docSnap = await getDoc(docRef);
+                let currentQty = 0;
+                
+                if (docSnap.exists()) {
+                    currentQty = docSnap.data().qtyStok;
+                } else {
+                    // If product doesn't exist and this is a stock-out, it's an error.
+                    if (qtyChange < 0) {
+                        showCustomAlert("Gagal mengurangi stok. Produk tidak ditemukan.", 'error');
+                        return;
+                    }
+                }
+                
+                const newQty = Math.max(0, currentQty + qtyChange);
+                
+                await setDoc(docRef, {
+                    namaProduk: productData.namaProduk,
+                    jenisSample: productData.jenisSample,
+                    qtyStok: newQty,
+                    timestamp: serverTimestamp()
+                }, { merge: true });
+
+                // Low stock warning
                 if (newQty > 0 && newQty <= 10) {
                     showCustomAlert(`PERINGATAN: Stok ${productData.namaProduk} (${productData.jenisSample}) tersisa ${newQty}!`, 'error');
                 } else if (newQty === 0) {
                      showCustomAlert(`PERINGATAN KRITIS: Stok ${productData.namaProduk} (${productData.jenisSample}) telah habis!`, 'error');
                 }
-            } else if (qtyChange > 0) {
-                // Jika produk belum ada dan ini adalah stok masuk, tambahkan produk baru
-                products.push({
-                    namaProduk: productData.namaProduk,
-                    jenisSample: productData.jenisSample,
-                    qtyStok: qtyChange
-                });
-            } else {
-                console.error("Produk tidak ditemukan saat mencoba mengurangi stok.");
-                showCustomAlert("Gagal mengurangi stok. Produk tidak ditemukan.", 'error');
+
+            } catch (e) {
+                console.error("Error updating product stock: ", e);
+                showCustomAlert("Terjadi kesalahan saat memperbarui stok.", 'error');
             }
-            saveDataToStorage();
         };
 
-        // Handler untuk form stok masuk
-        const handleStockInSubmit = (e) => {
+        // Handler for stock-in form submission (All Users)
+        const handleStockInSubmit = async (e) => {
             e.preventDefault();
+            if (!isAuthReady) return;
+
             const form = e.target;
             const tanggal = form.querySelector('#tanggal-in').value;
-            const pengirim = form.querySelector('#pengirim-in').value;
+            const asalGudang = form.querySelector('#pengirim-in').value;
             const items = [];
             form.querySelectorAll('.item-input-group').forEach(group => {
                 const namaProduk = group.querySelector('.nama-produk').value;
                 const jenisSample = group.querySelector('.jenis-sample').value;
                 const qty = parseInt(group.querySelector('.qty').value) || 0;
+                const tanggalExpired = group.querySelector('.tanggal-expired').value;
                 if (namaProduk && jenisSample && qty > 0) {
-                    items.push({ namaProduk, jenisSample, qty });
+                    items.push({ namaProduk, jenisSample, qty, tanggalExpired });
                 }
             });
 
-            if (!tanggal || !pengirim || items.length === 0) {
+            if (!tanggal || !asalGudang || items.length === 0) {
                 showCustomAlert('Harap lengkapi semua data dengan benar.', 'error');
                 return;
             }
 
-            const newEntry = { tanggal, pengirim, items, timestamp: new Date().toISOString() };
-            stockInHistory.unshift(newEntry);
-            
-            for (const item of items) {
-                updateProductStock(item, item.qty);
+            try {
+                const stockInColRef = collection(db, 'artifacts', appId, 'public', 'data', 'stockInHistory');
+                await addDoc(stockInColRef, {
+                    tanggal,
+                    asalGudang,
+                    items,
+                    timestamp: serverTimestamp()
+                });
+                
+                for (const item of items) {
+                    await updateProductStock(item, item.qty);
+                }
+                
+                showCustomAlert('Stok masuk berhasil disimpan!', 'success');
+                form.reset();
+                const container = document.getElementById('stock-in-items-container');
+                container.innerHTML = '';
+                addStockItem('stock-in-items-container');
+            } catch (e) {
+                console.error("Error adding document: ", e);
+                showCustomAlert("Terjadi kesalahan saat menyimpan stok masuk.", 'error');
             }
-            saveDataToStorage();
-            renderPageContent(); // Render ulang untuk memperbarui riwayat
-            showCustomAlert('Stok masuk berhasil disimpan!', 'success');
-            form.reset();
-            const container = document.getElementById('stock-in-items-container');
-            container.innerHTML = '';
-            addStockItem('stock-in-items-container');
         };
 
-        // Handler untuk form stok keluar
-        const handleStockOutSubmit = (e) => {
+        // Handler for stock-out form submission (All Users)
+        const handleStockOutSubmit = async (e) => {
             e.preventDefault();
+            if (!isAuthReady) return;
+
             const form = e.target;
             const tanggal = form.querySelector('#tanggal-out').value;
             const namaPIC = form.querySelector('#nama-pic').value;
@@ -154,7 +241,10 @@
                 namaPIC,
                 tujuan,
                 items: [],
-                timestamp: new Date().toISOString()
+                timestamp: serverTimestamp(),
+                userId,
+                // New: Add an approval status, defaulting to false
+                isApproved: false
             };
 
             if (tujuan === 'Customer') {
@@ -165,46 +255,98 @@
             }
 
             const items = [];
-            let hasError = false;
             form.querySelectorAll('.item-input-group').forEach(group => {
                 const namaProduk = group.querySelector('.nama-produk').value;
                 const jenisSample = group.querySelector('.jenis-sample').value;
                 const qty = parseInt(group.querySelector('.qty').value) || 0;
                 
                 if (namaProduk && jenisSample && qty > 0) {
-                    const productInStock = products.find(p => p.namaProduk === namaProduk && p.jenisSample === jenisSample);
-                    if (!productInStock || productInStock.qtyStok < qty) {
-                        showCustomAlert(`Stok ${namaProduk} (${jenisSample}) tidak mencukupi. Stok tersedia: ${productInStock ? productInStock.qtyStok : 0}`, 'error');
-                        hasError = true;
-                    }
                     items.push({ namaProduk, jenisSample, qty });
                 }
             });
 
-            if (hasError || !tanggal || !namaPIC || items.length === 0) {
-                showCustomAlert('Harap lengkapi semua data dengan benar dan pastikan stok mencukupi.', 'error');
+            if (!tanggal || !namaPIC || items.length === 0) {
+                showCustomAlert('Harap lengkapi semua data dengan benar.', 'error');
                 return;
             }
             outflowData.items = items;
-            stockOutHistory.unshift(outflowData);
 
-            for (const item of items) {
-                updateProductStock(item, -item.qty);
+            try {
+                const stockOutColRef = collection(db, 'artifacts', appId, 'public', 'data', 'stockOutHistory');
+                await addDoc(stockOutColRef, outflowData);
+                
+                showCustomAlert('Stok keluar berhasil dicatat dan menunggu persetujuan!', 'success');
+                form.reset();
+                const container = document.getElementById('stock-out-items-container');
+                container.innerHTML = '';
+                addStockItem('stock-out-items-container', products);
+            } catch (e) {
+                console.error("Error adding document: ", e);
+                showCustomAlert("Terjadi kesalahan saat mencatat stok keluar.", 'error');
             }
-            saveDataToStorage();
-            renderPageContent(); // Render ulang untuk memperbarui riwayat
-            showCustomAlert('Stok keluar berhasil disimpan!', 'success');
-            form.reset();
-            const container = document.getElementById('stock-out-items-container');
-            container.innerHTML = '';
-            addStockItem('stock-out-items-container', products);
         };
 
-        // Fungsi untuk menambahkan item input baru di form
+        // New function to handle the approval of a stock-out entry
+        const handleApproveStockOut = async (docId, items) => {
+            if (!isAuthReady || !isAdminAuthenticated) {
+                showCustomAlert("Anda tidak memiliki izin untuk menyetujui permintaan ini.", 'error');
+                return;
+            }
+
+            // Check if there is enough stock before approving
+            let hasEnoughStock = true;
+            for (const item of items) {
+                const productInStock = products.find(p => p.namaProduk === item.namaProduk && p.jenisSample === item.jenisSample);
+                if (!productInStock || productInStock.qtyStok < item.qty) {
+                    showCustomAlert(`Stok ${item.namaProduk} (${item.jenisSample}) tidak mencukupi untuk di-approve. Stok tersedia: ${productInStock ? productInStock.qtyStok : 0}`, 'error');
+                    hasEnoughStock = false;
+                    break;
+                }
+            }
+
+            if (!hasEnoughStock) {
+                return;
+            }
+
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'stockOutHistory', docId);
+
+            try {
+                // Update the document to set isApproved to true and add a timestamp
+                await updateDoc(docRef, {
+                    isApproved: true,
+                    timestampApproved: serverTimestamp()
+                });
+
+                // Now, reduce the stock in the products collection
+                for (const item of items) {
+                    await updateProductStock(item, -item.qty);
+                }
+
+                showCustomAlert('Stok keluar berhasil di-approve dan stok telah diperbarui!', 'success');
+            } catch (e) {
+                console.error("Error approving stock-out: ", e);
+                showCustomAlert("Terjadi kesalahan saat meng-approve stok keluar.", 'error');
+            }
+        };
+
+        // Function to add a new item input to the form
         const addStockItem = (containerId, productsList = null) => {
             const container = document.getElementById(containerId);
             const div = document.createElement('div');
-            div.className = 'item-input-group grid grid-cols-1 md:grid-cols-4 gap-4 p-4 border rounded-lg bg-gray-50 mb-4';
+            // Adjust grid columns based on containerId to match the number of input fields
+            const gridColsClass = containerId === 'stock-in-items-container' ? 'grid-cols-5' : 'grid-cols-4';
+            div.className = `item-input-group grid grid-cols-1 md:${gridColsClass} gap-4 p-4 border rounded-lg bg-gray-50 mb-4`;
+            
+            let extraInput = '';
+            if (containerId === 'stock-in-items-container') {
+                extraInput = `
+                    <div class="md:col-span-1">
+                        <label class="block text-sm font-medium text-gray-700">Tgl Expired</label>
+                        <input type="date" name="tanggalExpired" class="tanggal-expired mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" />
+                    </div>
+                `;
+            }
+
             div.innerHTML = `
                 <div class="md:col-span-1">
                     <label class="block text-sm font-medium text-gray-700">Nama Produk</label>
@@ -225,6 +367,7 @@
                     <label class="block text-sm font-medium text-gray-700">Jumlah (QTY)</label>
                     <input type="number" name="qty" class="qty mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" min="1" />
                 </div>
+                ${extraInput}
                 <div class="md:col-span-1 flex items-end">
                     <button type="button" class="w-full md:w-auto px-4 py-2 bg-red-500 text-white rounded-md shadow-sm hover:bg-red-600 transition-colors duration-200 remove-item-btn">Hapus</button>
                 </div>
@@ -246,12 +389,12 @@
             }
         };
 
-        // Fungsi untuk merender tampilan dashboard
+        // Function to render the dashboard view
         const renderDashboard = () => {
             const sortedProducts = [...products].sort((a, b) => a.namaProduk.localeCompare(b.namaProduk));
             return `
                 <div class="bg-white p-6 rounded-xl shadow-lg">
-                    <h2 class="text-2xl font-semibold mb-6">Jumlah Stok Sample</h2>
+                    <h2 class="text-2xl font-semibold mb-6">Jumlah Stok Sampel</h2>
                     <div class="overflow-x-auto">
                         <table class="min-w-full bg-white rounded-lg">
                             <thead>
@@ -265,7 +408,8 @@
                                 ${sortedProducts.length > 0 ? (
                                     sortedProducts.map(product => `
                                         <tr class="border-b border-gray-200 hover:bg-gray-100 transition-colors duration-200 ${
-                                            product.qtyStok <= 10 ? 'bg-red-100 text-red-700 font-bold' : ''
+                                            product.qtyStok <= 10 && product.qtyStok > 0 ? 'bg-yellow-100 text-yellow-700 font-bold' :
+                                            product.qtyStok === 0 ? 'bg-red-100 text-red-700 font-bold' : ''
                                         }">
                                             <td class="py-3 px-6 text-left whitespace-nowrap"><span class="font-medium">${product.namaProduk}</span></td>
                                             <td class="py-3 px-6 text-left"><span>${product.jenisSample}</span></td>
@@ -284,19 +428,73 @@
             `;
         };
 
-        // Fungsi untuk merender tampilan stok masuk
-        const renderStockInForm = () => {
-            const sortedHistory = [...stockInHistory].sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
+        // New function to render the stock-out history table with approval button
+        const renderStockOutTable = () => {
+            const sortedHistory = [...stockOutHistory].sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
             return `
-                <div class="bg-white p-6 rounded-xl shadow-lg max-w-4xl mx-auto">
-                    <h2 class="text-2xl font-semibold mb-6">Input Stok Masuk</h2>
+                <div class="bg-white p-6 rounded-xl shadow-lg">
+                    <h2 class="text-2xl font-semibold mb-6">Stok Keluar</h2>
+                    <div class="overflow-y-auto max-h-80">
+                        <table id="stock-out-table" class="min-w-full bg-white">
+                            <thead>
+                                <tr class="bg-gray-200 text-gray-600 uppercase text-sm leading-normal">
+                                    <th class="py-3 px-6 text-left">Tanggal</th>
+                                    <th class="py-3 px-6 text-left">PIC</th>
+                                    <th class="py-3 px-6 text-left">Tujuan</th>
+                                    <th class="py-3 px-6 text-left">Produk</th>
+                                    <th class="py-3 px-6 text-center">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-gray-600 text-sm font-light">
+                                ${sortedHistory.length > 0 ? (
+                                    sortedHistory.map(entry => `
+                                        <tr class="border-b border-gray-200">
+                                            <td class="py-3 px-6 whitespace-nowrap">${entry.tanggal}</td>
+                                            <td class="py-3 px-6">${entry.namaPIC}</td>
+                                            <td class="py-3 px-6">
+                                                ${entry.tujuan === 'Customer' ? `${entry.tujuan}: ${entry.namaCustomer}` : entry.tujuan === 'Lain-lain' ? `${entry.tujuan}: ${entry.deskripsiLain}` : entry.tujuan}
+                                            </td>
+                                            <td class="py-3 px-6">
+                                                ${entry.items.map(item => `<div>${item.namaProduk} (${item.jenisSample}) - Qty: ${item.qty}</div>`).join('')}
+                                            </td>
+                                            <td class="py-3 px-6 text-center">
+                                                ${entry.isApproved ? 
+                                                    `<span class="bg-green-500 text-white rounded-full h-8 w-8 flex items-center justify-center mx-auto transition-colors duration-200">✓</span>` :
+                                                    `<button class="approve-btn bg-orange-500 text-white rounded-full h-8 w-8 flex items-center justify-center mx-auto font-bold hover:bg-orange-600 transition-colors duration-200" data-doc-id="${entry.id}" data-items='${JSON.stringify(entry.items)}'>!</button>`
+                                                }
+                                            </td>
+                                        </tr>
+                                    `).join('')
+                                ) : `
+                                    <tr>
+                                        <td colspan="5" class="py-4 text-center text-gray-500">Tidak ada riwayat.</td>
+                                    </tr>
+                                `}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        };
+
+        // Function to render the Admin Page view with a two-column layout
+        const renderAdminPage = () => {
+            if (!isAdminAuthenticated) {
+                return `<div class="p-6 text-center text-gray-500">Anda perlu login sebagai admin untuk mengakses halaman ini.</div>`;
+            }
+
+            const sortedStockInHistory = [...stockInHistory].sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
+            
+            const stockInForm = `
+                <div class="bg-white p-6 rounded-xl shadow-lg">
+                    <h2 class="text-2xl font-semibold mb-6">Stok Masuk</h2>
                     <form id="stock-in-form" class="space-y-4">
                         <div>
                             <label for="tanggal-in" class="block text-sm font-medium text-gray-700">Tanggal Datang Pengiriman</label>
                             <input type="date" id="tanggal-in" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" />
                         </div>
                         <div>
-                            <label for="pengirim-in" class="block text-sm font-medium text-gray-700">Nama Pengirim</label>
+                            <label for="pengirim-in" class="block text-sm font-medium text-gray-700">Asal Gudang</label>
                             <input type="text" id="pengirim-in" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" />
                         </div>
                         <div class="space-y-4">
@@ -309,32 +507,38 @@
                         </div>
                     </form>
                 </div>
+            `;
 
-                <div class="bg-white p-6 rounded-xl shadow-lg mt-8">
-                    <h2 class="text-2xl font-semibold mb-6">Alur Stok Masuk</h2>
+            const stockInTable = `
+                <div class="bg-white p-6 rounded-xl shadow-lg mt-8 md:mt-0">
+                    <h2 class="text-2xl font-semibold mb-6">Data Stok Masuk</h2>
                     <div class="overflow-y-auto max-h-80">
                         <table class="min-w-full bg-white">
                             <thead>
                                 <tr class="bg-gray-200 text-gray-600 uppercase text-sm leading-normal">
                                     <th class="py-3 px-6 text-left">Tanggal</th>
-                                    <th class="py-3 px-6 text-left">Pengirim</th>
+                                    <th class="py-3 px-6 text-left">Asal Gudang</th>
                                     <th class="py-3 px-6 text-left">Produk</th>
+                                    <th class="py-3 px-6 text-left">Tgl Expired</th>
                                 </tr>
                             </thead>
                             <tbody class="text-gray-600 text-sm font-light">
-                                ${sortedHistory.length > 0 ? (
-                                    sortedHistory.map(entry => `
+                                ${sortedStockInHistory.length > 0 ? (
+                                    sortedStockInHistory.map(entry => `
                                         <tr class="border-b border-gray-200">
                                             <td class="py-3 px-6 whitespace-nowrap">${entry.tanggal}</td>
-                                            <td class="py-3 px-6">${entry.pengirim}</td>
+                                            <td class="py-3 px-6">${entry.asalGudang}</td>
                                             <td class="py-3 px-6">
                                                 ${entry.items.map(item => `<div>${item.namaProduk} (${item.jenisSample}) - Qty: ${item.qty}</div>`).join('')}
+                                            </td>
+                                            <td class="py-3 px-6">
+                                                ${entry.items.map(item => `<div>${item.tanggalExpired ? item.tanggalExpired : '-'}</div>`).join('')}
                                             </td>
                                         </tr>
                                     `).join('')
                                 ) : `
                                     <tr>
-                                        <td colspan="3" class="py-4 text-center text-gray-500">Tidak ada riwayat.</td>
+                                        <td colspan="4" class="py-4 text-center text-gray-500">Tidak ada riwayat.</td>
                                     </tr>
                                 `}
                             </tbody>
@@ -342,16 +546,32 @@
                     </div>
                 </div>
             `;
+            
+            return `
+                <div class="mb-6 flex justify-end">
+                    <button id="download-excel-btn" class="px-6 py-2 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700 transition-colors duration-200">
+                        Download Excel
+                    </button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-full mx-auto">
+                    <div>
+                        ${stockInForm}
+                        ${stockInTable}
+                    </div>
+                    <div>
+                        ${renderStockOutTable()}
+                    </div>
+                </div>
+            `;
         };
 
-        // Fungsi untuk merender tampilan stok keluar
+        // Function to render the stock-out view
         const renderStockOutForm = () => {
             const productOptions = products.map(p => `<option value="${p.namaProduk}" data-jenis="${p.jenisSample}">${p.namaProduk} (${p.jenisSample})</option>`).join('');
-            const sortedHistory = [...stockOutHistory].sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
             
             return `
                 <div class="bg-white p-6 rounded-xl shadow-lg max-w-4xl mx-auto">
-                    <h2 class="text-2xl font-semibold mb-6">Input Stok Keluar</h2>
+                    <h2 class="text-2xl font-semibold mb-6">Pesan di Sini</h2>
                     <form id="stock-out-form" class="space-y-4">
                         <div>
                             <label for="tanggal-out" class="block text-sm font-medium text-gray-700">Tanggal</label>
@@ -380,81 +600,45 @@
                         </div>
                     </form>
                 </div>
-
-                <div class="bg-white p-6 rounded-xl shadow-lg mt-8">
-                    <h2 class="text-2xl font-semibold mb-6">Alur Stok Keluar</h2>
-                    <div class="overflow-y-auto max-h-80">
-                        <table class="min-w-full bg-white">
-                            <thead>
-                                <tr class="bg-gray-200 text-gray-600 uppercase text-sm leading-normal">
-                                    <th class="py-3 px-6 text-left">Tanggal</th>
-                                    <th class="py-3 px-6 text-left">PIC</th>
-                                    <th class="py-3 px-6 text-left">Tujuan</th>
-                                    <th class="py-3 px-6 text-left">Produk</th>
-                                </tr>
-                            </thead>
-                            <tbody class="text-gray-600 text-sm font-light">
-                                ${sortedHistory.length > 0 ? (
-                                    sortedHistory.map(entry => `
-                                        <tr class="border-b border-gray-200">
-                                            <td class="py-3 px-6 whitespace-nowrap">${entry.tanggal}</td>
-                                            <td class="py-3 px-6">${entry.namaPIC}</td>
-                                            <td class="py-3 px-6">
-                                                ${entry.tujuan === 'Customer' ? `${entry.tujuan}: ${entry.namaCustomer}` : entry.tujuan === 'Lain-lain' ? `${entry.tujuan}: ${entry.deskripsiLain}` : entry.tujuan}
-                                            </td>
-                                            <td class="py-3 px-6">
-                                                ${entry.items.map(item => `<div>${item.namaProduk} (${item.jenisSample}) - Qty: ${item.qty}</div>`).join('')}
-                                            </td>
-                                        </tr>
-                                    `).join('')
-                                ) : `
-                                    <tr>
-                                        <td colspan="4" class="py-4 text-center text-gray-500">Tidak ada riwayat.</td>
-                                    </tr>
-                                `}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
             `;
         };
         
-        // Fungsi untuk mengunduh semua data ke dalam satu file Excel dengan tiga tab
+        // Function to download all data to a single Excel file with three tabs
         const downloadAllDataToSingleExcel = () => {
             if (products.length === 0 && stockInHistory.length === 0 && stockOutHistory.length === 0) {
                 showCustomAlert('Tidak ada data untuk diunduh.', 'error');
                 return;
             }
 
-            // Buat workbook baru
             const wb = XLSX.utils.book_new();
 
-            // 1. Buat sheet untuk Stok Produk
+            // 1. Create sheet for Product Stock
             const productsToExport = products.map(p => ({
                 'Nama Produk': p.namaProduk,
                 'Jenis Sample': p.jenisSample,
                 'Kuantitas Stok': p.qtyStok
             }));
             const wsProducts = XLSX.utils.json_to_sheet(productsToExport);
-            XLSX.utils.book_append_sheet(wb, wsProducts, "Stok Sample");
+            XLSX.utils.book_append_sheet(wb, wsProducts, "Stok Sampel");
 
-            // 2. Buat sheet untuk Riwayat Stok Masuk
+            // 2. Create sheet for Data Stok Masuk
             const stockInToExport = [];
             stockInHistory.forEach(entry => {
                 entry.items.forEach(item => {
                     stockInToExport.push({
                         'Tanggal': entry.tanggal,
-                        'Pengirim': entry.pengirim,
+                        'Asal Gudang': entry.asalGudang,
                         'Nama Produk': item.namaProduk,
                         'Jenis Sample': item.jenisSample,
-                        'Kuantitas': item.qty
+                        'Kuantitas': item.qty,
+                        'Tanggal Expired': item.tanggalExpired
                     });
                 });
             });
             const wsStockIn = XLSX.utils.json_to_sheet(stockInToExport);
-            XLSX.utils.book_append_sheet(wb, wsStockIn, "Alur Stok Masuk");
+            XLSX.utils.book_append_sheet(wb, wsStockIn, "Data Stok Masuk");
 
-            // 3. Buat sheet untuk Riwayat Stok Keluar
+            // 3. Create sheet for Stok Keluar
             const stockOutToExport = [];
             stockOutHistory.forEach(entry => {
                 entry.items.forEach(item => {
@@ -464,7 +648,8 @@
                         'Tujuan': entry.tujuan,
                         'Nama Produk': item.namaProduk,
                         'Jenis Sample': item.jenisSample,
-                        'Kuantitas': item.qty
+                        'Kuantitas': item.qty,
+                        'Status': entry.isApproved ? 'Approve' : 'Menunggu Approval'
                     };
                     if (entry.tujuan === 'Customer') {
                         baseEntry['Nama Customer'] = entry.namaCustomer;
@@ -476,43 +661,38 @@
                 });
             });
             const wsStockOut = XLSX.utils.json_to_sheet(stockOutToExport);
-            XLSX.utils.book_append_sheet(wb, wsStockOut, "Alur Stok Keluar");
+            XLSX.utils.book_append_sheet(wb, wsStockOut, "Stok Keluar");
             
-            // Tulis dan simpan file Excel
             const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-            saveAs(new Blob([wbout], { type: 'application/octet-stream' }), "Data_Stok_Sample_Management.xlsx");
+            saveAs(new Blob([wbout], { type: 'application/octet-stream' }), "Data_Stok_Sampel_Manajemen.xlsx");
         };
 
-        // Fungsi utama untuk merender keseluruhan UI
+        // Function to render the main UI layout
         const renderAppLayout = () => {
             const html = `
                 <header class="bg-white shadow-md sticky top-0 z-50">
                     <nav class="container mx-auto px-4 py-3 flex flex-col sm:flex-row justify-between items-center">
                         <div class="flex items-center space-x-4 mb-2 sm:mb-0">
                             <div class="text-2xl font-bold text-indigo-600">
-                                Management Stok Sample
+                                Manajemen Stok Sampel
                             </div>
+                            <span class="text-xs text-gray-500">User ID: ${userId}</span>
                         </div>
                         <div class="flex flex-wrap justify-center sm:justify-start items-center space-x-2 sm:space-x-4">
                             <button data-page="dashboard" class="nav-btn px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${currentPage === 'dashboard' ? 'bg-indigo-500 text-white shadow-md' : 'text-gray-700 hover:bg-gray-200'}">
                                 Dashboard
                             </button>
                             <button data-page="stock-out" class="nav-btn px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${currentPage === 'stock-out' ? 'bg-indigo-500 text-white shadow-md' : 'text-gray-700 hover:bg-gray-200'}">
-                                ORDER NOW!
+                                Pesan di Sini
                             </button>
-                            <button data-page="stock-in" class="nav-btn px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${currentPage === 'stock-in' ? 'bg-indigo-500 text-white shadow-md' : 'text-gray-700 hover:bg-gray-200'}">
-                                Stok Masuk
-                            </button>
-                        </div>
-                        <div class="mt-4 sm:mt-0">
-                            <button id="download-excel-btn" class="px-6 py-2 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700 transition-colors duration-200">
-                                Excel
+                            <button data-page="admin-page" class="nav-btn px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${currentPage === 'admin-page' ? 'bg-indigo-500 text-white shadow-md' : 'text-gray-700 hover:bg-gray-200'}">
+                                Admin Page
                             </button>
                         </div>
                     </nav>
                 </header>
                 <main class="container mx-auto px-4 py-8" id="main-content">
-                    <!-- Konten akan dimuat di sini -->
+                    <!-- Content will be loaded here -->
                 </main>
             `;
             appContainer.innerHTML = html;
@@ -520,7 +700,7 @@
             renderPageContent();
         };
 
-        // Fungsi untuk merender konten halaman yang aktif
+        // Function to render the active page content
         const renderPageContent = () => {
             const mainContent = document.getElementById('main-content');
             if (!mainContent) return;
@@ -528,44 +708,56 @@
             let content = '';
             if (currentPage === 'dashboard') {
                 content = renderDashboard();
-            } else if (currentPage === 'stock-in') {
-                content = renderStockInForm();
+            } else if (currentPage === 'admin-page') {
+                content = renderAdminPage();
             } else if (currentPage === 'stock-out') {
                 content = renderStockOutForm();
+            } else {
+                content = `<div class="p-6 text-center text-gray-500">Halaman tidak dapat diakses.</div>`;
             }
             mainContent.innerHTML = content;
             setupPageListeners();
         };
 
-        // Menambahkan event listener ke tombol navigasi
+        // Add event listeners to navigation buttons
         const addNavListeners = () => {
             document.querySelectorAll('.nav-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
-                    currentPage = btn.dataset.page;
-                    document.querySelectorAll('.nav-btn').forEach(b => {
-                        b.classList.remove('bg-indigo-500', 'text-white', 'shadow-md');
-                        b.classList.add('text-gray-700', 'hover:bg-gray-200');
-                    });
-                    btn.classList.add('bg-indigo-500', 'text-white', 'shadow-md');
-                    btn.classList.remove('hover:bg-gray-200');
-                    renderPageContent();
+                    const page = btn.dataset.page;
+                    if (page === 'admin-page' && !isAdminAuthenticated) {
+                        showLoginModal();
+                        // Prevent changing the page content until login is successful
+                        return;
+                    }
+                    currentPage = page;
+                    renderAppLayout(); // Re-render to update active state
                 });
             });
-            // Listener untuk tombol unduh Excel yang baru
-            document.getElementById('download-excel-btn').addEventListener('click', downloadAllDataToSingleExcel);
         };
 
-        // Menyiapkan listener spesifik untuk setiap halaman
+        // Setup specific listeners for each page
         const setupPageListeners = () => {
-            if (currentPage === 'stock-in') {
+            if (currentPage === 'admin-page' && isAdminAuthenticated) {
                 document.getElementById('stock-in-form').addEventListener('submit', handleStockInSubmit);
                 document.getElementById('add-stock-in-item-btn').addEventListener('click', () => addStockItem('stock-in-items-container'));
-                addStockItem('stock-in-items-container'); // Tambahkan satu item default
+                addStockItem('stock-in-items-container');
+
+                // Add event listener for the approval buttons using event delegation
+                document.getElementById('main-content').addEventListener('click', (e) => {
+                    if (e.target.classList.contains('approve-btn')) {
+                        const docId = e.target.dataset.docId;
+                        const items = JSON.parse(e.target.dataset.items);
+                        handleApproveStockOut(docId, items);
+                    }
+                });
+                
+                // New listener for the Excel button, now on the admin page
+                document.getElementById('download-excel-btn').addEventListener('click', downloadAllDataToSingleExcel);
+
             } else if (currentPage === 'stock-out') {
                 document.getElementById('stock-out-form').addEventListener('submit', handleStockOutSubmit);
                 document.getElementById('add-stock-out-item-btn').addEventListener('click', () => addStockItem('stock-out-items-container', products));
                 
-                // Tambahkan listener untuk perubahan tujuan
                 document.getElementById('tujuan').addEventListener('change', (e) => {
                     const additionalFields = document.getElementById('additional-fields');
                     additionalFields.innerHTML = '';
@@ -589,15 +781,94 @@
                         `;
                     }
                 });
-                addStockItem('stock-out-items-container', products); // Tambahkan satu item default
+                addStockItem('stock-out-items-container', products);
             }
         };
 
-        // Mulai aplikasi saat jendela dimuat
-        window.onload = () => {
-            loadDataFromStorage();
-            renderAppLayout();
+        // --- Firebase Initialization and Listeners ---
+        const initFirebase = async () => {
+            try {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        isAuthReady = true;
+
+                        // Start listening to database changes
+                        setupFirestoreListeners();
+                        renderAppLayout();
+                    } else {
+                        isAuthReady = false;
+                        if (initialAuthToken) {
+                            try {
+                                await signInWithCustomToken(auth, initialAuthToken);
+                            } catch (e) {
+                                console.error("Error signing in with custom token, trying anonymous sign-in", e);
+                                await signInAnonymously(auth);
+                            }
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    }
+                });
+
+                // Attach login form submission listener
+                loginForm.addEventListener('submit', handleAdminLogin);
+                
+                // Add event listener for the new close button
+                document.getElementById('close-login-modal').addEventListener('click', () => {
+                    hideLoginModal();
+                    // Navigate back to the 'stock-out' page as requested
+                    currentPage = 'stock-out';
+                    renderAppLayout();
+                });
+
+            } catch (e) {
+                console.error("Firebase initialization error: ", e);
+                appContainer.innerHTML = `<div class="p-6 text-center text-red-500">Gagal memuat aplikasi. Cek konfigurasi Firebase.</div>`;
+            }
         };
+
+        const setupFirestoreListeners = () => {
+            if (!isAuthReady) return;
+
+            // This listener automatically fetches and updates the 'products' array whenever the data changes in Firestore.
+            // This ensures that the Dashboard view, which uses the 'products' array, will always show the latest data.
+            const productsColRef = collection(db, 'artifacts', appId, 'public', 'data', 'products');
+            onSnapshot(productsColRef, (snapshot) => {
+                products = snapshot.docs.map(doc => doc.data());
+                renderPageContent(); // Re-render to update products on dashboard/stock-out
+            });
+
+            // Listen for public stock-out history changes
+            const stockOutColRef = collection(db, 'artifacts', appId, 'public', 'data', 'stockOutHistory');
+            onSnapshot(stockOutColRef, (snapshot) => {
+                stockOutHistory = snapshot.docs.map(doc => {
+                    const data = doc.data();
+                    const timestamp = data.timestamp ? data.timestamp.toDate() : new Date();
+                    return { id: doc.id, ...data, timestamp: timestamp.toISOString() };
+                });
+                renderPageContent(); // Re-render to update stock-out history
+            });
+
+            // Listen for public stock-in history changes
+            const stockInColRef = collection(db, 'artifacts', appId, 'public', 'data', 'stockInHistory');
+            onSnapshot(stockInColRef, (snapshot) => {
+                stockInHistory = snapshot.docs.map(doc => {
+                    const data = doc.data();
+                    const timestamp = data.timestamp ? data.timestamp.toDate() : new Date();
+                    return { id: doc.id, ...data, timestamp: timestamp.toISOString() };
+                });
+                renderPageContent(); // Re-render to update stock-in history
+            });
+        };
+
+        // Start the application after the window loads
+        window.onload = initFirebase;
+
     </script>
 </body>
 </html>
