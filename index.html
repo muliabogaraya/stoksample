@@ -66,10 +66,6 @@
                 </div>
                 <p id="login-error" class="text-sm text-red-500 text-center mb-4 hidden">Username atau password salah.</p>
                 <button type="submit" class="w-full px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg shadow-md hover:bg-indigo-700 transition-colors duration-200">Login</button>
-                 <button type="button" id="google-login-btn" class="w-full mt-2 px-4 py-2 bg-red-500 text-white font-bold rounded-lg shadow-md hover:bg-red-600 transition-colors duration-200 flex items-center justify-center space-x-2">
-                    <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.57l3.65-3.57C34.39 4.3 29.5 2 24 2 15.2 2 7.74 6.81 4.3 14.15l5.77 4.47C12.01 13.9 17.5 9.5 24 9.5z"/><path fill="#4285F4" d="M46.7 24.5c0-.68-.06-1.35-.18-2H24v4h11.97c-.77 2.9-2.58 5.17-5 6.78l5.88 4.58c3.53-3.26 5.65-7.78 5.65-13.36z"/><path fill="#FBBC05" d="M9.99 29.54c-.26-.81-.41-1.67-.41-2.54s.15-1.73.41-2.54l-5.77-4.47C3.54 20.31 3 22.08 3 24s.54 3.69 1.44 5.25l5.55-4.27z"/><path fill="#34A853" d="M24 45c5.5 0 10.39-2.3 13.88-6.01l-5.88-4.58c-2.42 1.6-4.99 2.54-7.9 2.54-6.49 0-11.99-4.4-14.28-10.45l-5.77 4.47C7.74 41.19 15.2 45 24 45z"/></svg>
-                    <span>Login dengan Google</span>
-                </button>
             </form>
         </div>
     </div>
@@ -77,7 +73,7 @@
     <script type="module">
         // Import Firebase modules
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, addDoc, serverTimestamp, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // Use global variables provided by the environment
@@ -702,12 +698,6 @@
                                 Manajemen Stok Sampel
                             </div>
                             <span class="text-xs text-gray-500">User ID: ${userId}</span>
-                            <span class="text-xs text-gray-500">User ID: ${userId}</span>
-                            ${userId !== 'unauthenticated' ? `
-                                <button id="logout-btn" class="ml-4 px-4 py-2 rounded-lg font-medium bg-red-500 text-white hover:bg-red-600 transition-colors duration-200">
-                                    Logout
-                                </button>
-                            ` : ''}
                         </div>
                         <div class="flex flex-wrap justify-center sm:justify-start items-center space-x-2 sm:space-x-4">
                             <button data-page="dashboard" class="nav-btn px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${currentPage === 'dashboard' ? 'bg-indigo-500 text-white shadow-md' : 'text-gray-700 hover:bg-gray-200'}">
@@ -856,11 +846,6 @@
             });
 
             loginForm.addEventListener('submit', handleAdminLogin);
-
-            const googleLoginBtn = document.getElementById('google-login-btn');
-            if (googleLoginBtn) {
-                googleLoginBtn.addEventListener('click', handleGoogleLogin);
-            }
             
             document.getElementById('close-login-modal').addEventListener('click', () => {
                 hideLoginModal();
@@ -878,11 +863,7 @@
             onSnapshot(productsColRef, (snapshot) => {
                 products = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 renderPageContent();
-                const logoutBtn = document.getElementById('logout-btn');
-                if (logoutBtn) {
-                    logoutBtn.addEventListener('click', handleLogout);
-                }
-            };
+            });
 
             const stockOutColRef = collection(db, 'artifacts', appId, 'public', 'data', 'Stok Keluar');
             onSnapshot(stockOutColRef, (snapshot) => {
