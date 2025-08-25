@@ -75,20 +75,30 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, addDoc, serverTimestamp, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Firebase configuration and initialization
-        // Global variables provided by the Canvas environment
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        
+        // Use global variables provided by the environment
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = {
+            apiKey: "AIzaSyC0P5UQGsHag1sThlmrDRpcnJG9u7J-UuQ",
+            authDomain: "sampleprochiz.firebaseapp.com",
+            projectId: "sampleprochiz",
+            storageBucket: "sampleprochiz.firebasestorage.app",
+            messagingSenderId: "831412351519",
+            appId: "1:831412351519:web:eeeacfe5c53e874bff5b2a",
+            measurementId: "G-D04PM18X5F"
+        };;
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        let app, db, auth, userId;
+        let app;
+        let auth;
+        let db;
+        let userId = '';
         let products = [];
         let stockInHistory = [];
         let stockOutHistory = [];
         let currentPage = 'dashboard';
         let isAuthReady = false;
-        let isAdminAuthenticated = false; // New state to track admin login status
+        let isAdminAuthenticated = false;
 
         const appContainer = document.getElementById('app-container');
         const loginModal = document.getElementById('login-modal');
@@ -138,9 +148,13 @@
         
         // Function to update a product's stock in Firestore
         const updateProductStock = async (productData, qtyChange) => {
-            if (!isAuthReady) return;
+            if (!isAuthReady) {
+                 showCustomAlert("Gagal memperbarui stok. Anda tidak memiliki izin untuk menulis data. Silakan coba login kembali.", 'error');
+                 return;
+            }
             
-            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'products', `${productData.namaProduk}_${productData.jenisSample}`);
+            // Use a public collection to allow any authenticated user to update stock
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'Jumlah Stok Sampel', `${productData.namaProduk}_${productData.jenisSample}`);
             
             try {
                 const docSnap = await getDoc(docRef);
@@ -149,7 +163,6 @@
                 if (docSnap.exists()) {
                     currentQty = docSnap.data().qtyStok;
                 } else {
-                    // If product doesn't exist and this is a stock-out, it's an error.
                     if (qtyChange < 0) {
                         showCustomAlert("Gagal mengurangi stok. Produk tidak ditemukan.", 'error');
                         return;
@@ -165,7 +178,6 @@
                     timestamp: serverTimestamp()
                 }, { merge: true });
 
-                // Low stock warning
                 if (newQty > 0 && newQty <= 10) {
                     showCustomAlert(`PERINGATAN: Stok ${productData.namaProduk} (${productData.jenisSample}) tersisa ${newQty}!`, 'error');
                 } else if (newQty === 0) {
@@ -181,7 +193,10 @@
         // Handler for stock-in form submission (All Users)
         const handleStockInSubmit = async (e) => {
             e.preventDefault();
-            if (!isAuthReady) return;
+            if (!isAuthReady) {
+                showCustomAlert("Anda tidak memiliki izin untuk menambahkan data.", 'error');
+                return;
+            }
 
             const form = e.target;
             const tanggal = form.querySelector('#tanggal-in').value;
@@ -203,7 +218,8 @@
             }
 
             try {
-                const stockInColRef = collection(db, 'artifacts', appId, 'public', 'data', 'stockInHistory');
+                // Use a public collection for stock-in to be visible to all
+                const stockInColRef = collection(db, 'artifacts', appId, 'public', 'data', 'Data Stok Masuk');
                 await addDoc(stockInColRef, {
                     tanggal,
                     asalGudang,
@@ -229,7 +245,10 @@
         // Handler for stock-out form submission (All Users)
         const handleStockOutSubmit = async (e) => {
             e.preventDefault();
-            if (!isAuthReady) return;
+            if (!isAuthReady) {
+                showCustomAlert("Anda tidak memiliki izin untuk mencatat stok keluar.", 'error');
+                return;
+            }
 
             const form = e.target;
             const tanggal = form.querySelector('#tanggal-out').value;
@@ -272,7 +291,8 @@
             outflowData.items = items;
 
             try {
-                const stockOutColRef = collection(db, 'artifacts', appId, 'public', 'data', 'stockOutHistory');
+                // Use a public collection for stock-out requests to be visible to the admin
+                const stockOutColRef = collection(db, 'artifacts', appId, 'public', 'data', 'Stok Keluar');
                 await addDoc(stockOutColRef, outflowData);
                 
                 showCustomAlert('Stok keluar berhasil dicatat dan menunggu persetujuan!', 'success');
@@ -293,7 +313,6 @@
                 return;
             }
 
-            // Check if there is enough stock before approving
             let hasEnoughStock = true;
             for (const item of items) {
                 const productInStock = products.find(p => p.namaProduk === item.namaProduk && p.jenisSample === item.jenisSample);
@@ -308,7 +327,8 @@
                 return;
             }
 
-            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'stockOutHistory', docId);
+            // Reference the public collection
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'Stok Keluar', docId);
 
             try {
                 // Update the document to set isApproved to true and add a timestamp
@@ -317,7 +337,7 @@
                     timestampApproved: serverTimestamp()
                 });
 
-                // Now, reduce the stock in the products collection
+                // Now, reduce the stock in the public products collection
                 for (const item of items) {
                     await updateProductStock(item, -item.qty);
                 }
@@ -332,8 +352,9 @@
         // Function to add a new item input to the form
         const addStockItem = (containerId, productsList = null) => {
             const container = document.getElementById(containerId);
+            if (!container) return;
+            
             const div = document.createElement('div');
-            // Adjust grid columns based on containerId to match the number of input fields
             const gridColsClass = containerId === 'stock-in-items-container' ? 'grid-cols-5' : 'grid-cols-4';
             div.className = `item-input-group grid grid-cols-1 md:${gridColsClass} gap-4 p-4 border rounded-lg bg-gray-50 mb-4`;
             
@@ -726,11 +747,10 @@
                     const page = btn.dataset.page;
                     if (page === 'admin-page' && !isAdminAuthenticated) {
                         showLoginModal();
-                        // Prevent changing the page content until login is successful
                         return;
                     }
                     currentPage = page;
-                    renderAppLayout(); // Re-render to update active state
+                    renderAppLayout();
                 });
             });
         };
@@ -742,7 +762,6 @@
                 document.getElementById('add-stock-in-item-btn').addEventListener('click', () => addStockItem('stock-in-items-container'));
                 addStockItem('stock-in-items-container');
 
-                // Add event listener for the approval buttons using event delegation
                 document.getElementById('main-content').addEventListener('click', (e) => {
                     if (e.target.classList.contains('approve-btn')) {
                         const docId = e.target.dataset.docId;
@@ -751,7 +770,6 @@
                     }
                 });
                 
-                // New listener for the Excel button, now on the admin page
                 document.getElementById('download-excel-btn').addEventListener('click', downloadAllDataToSingleExcel);
 
             } else if (currentPage === 'stock-out') {
@@ -788,87 +806,87 @@
         // --- Firebase Initialization and Listeners ---
         const initFirebase = async () => {
             try {
+                if (!firebaseConfig.projectId) {
+                    console.warn("Firebase config is empty. Using default fallback configuration.");
+                }
                 app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
                 db = getFirestore(app);
-
-                onAuthStateChanged(auth, async (user) => {
-                    if (user) {
-                        userId = user.uid;
-                        isAuthReady = true;
-
-                        // Start listening to database changes
-                        setupFirestoreListeners();
-                        renderAppLayout();
-                    } else {
-                        isAuthReady = false;
-                        if (initialAuthToken) {
-                            try {
-                                await signInWithCustomToken(auth, initialAuthToken);
-                            } catch (e) {
-                                console.error("Error signing in with custom token, trying anonymous sign-in", e);
-                                await signInAnonymously(auth);
-                            }
-                        } else {
-                            await signInAnonymously(auth);
-                        }
-                    }
-                });
-
-                // Attach login form submission listener
-                loginForm.addEventListener('submit', handleAdminLogin);
                 
-                // Add event listener for the new close button
-                document.getElementById('close-login-modal').addEventListener('click', () => {
-                    hideLoginModal();
-                    // Navigate back to the 'stock-out' page as requested
-                    currentPage = 'stock-out';
-                    renderAppLayout();
-                });
-
+                // Check if a custom auth token is available and try to sign in with it.
+                // This is the preferred method in the Canvas environment.
+                if (initialAuthToken) {
+                    console.log("Trying to sign in with custom token...");
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    console.log("No custom token found, attempting anonymous sign-in...");
+                    // This is the fallback if no token is provided.
+                    await signInAnonymously(auth);
+                }
             } catch (e) {
-                console.error("Firebase initialization error: ", e);
-                appContainer.innerHTML = `<div class="p-6 text-center text-red-500">Gagal memuat aplikasi. Cek konfigurasi Firebase.</div>`;
+                // If any sign-in method fails (e.g., invalid token, anonymous auth disabled),
+                // we catch the error and the onAuthStateChanged listener will handle the unauthenticated state.
+                console.error("Sign-in failed. This may be expected if the token is invalid or anonymous auth is disabled.", e.message);
             }
+            
+            // The onAuthStateChanged listener is the single source of truth for auth state.
+            // It will be triggered after the sign-in attempt (whether successful or not).
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    userId = user.uid;
+                    isAuthReady = true;
+                    console.log("User is authenticated. User ID:", userId);
+                } else {
+                    userId = 'unauthenticated';
+                    isAuthReady = false;
+                    console.log("User is not authenticated. Some features may be disabled.");
+                }
+                setupFirestoreListeners();
+                renderAppLayout();
+            });
+
+            loginForm.addEventListener('submit', handleAdminLogin);
+            
+            document.getElementById('close-login-modal').addEventListener('click', () => {
+                hideLoginModal();
+                currentPage = 'stock-out';
+                renderAppLayout();
+            });
         };
 
         const setupFirestoreListeners = () => {
-            if (!isAuthReady) return;
+            // No longer checking for isAuthReady here, as we want to load public data
+            // even if the user is unauthenticated. The security rules will prevent write access.
 
-            // This listener automatically fetches and updates the 'products' array whenever the data changes in Firestore.
-            // This ensures that the Dashboard view, which uses the 'products' array, will always show the latest data.
-            const productsColRef = collection(db, 'artifacts', appId, 'public', 'data', 'products');
+            // Use the public data path for shared collections
+            const productsColRef = collection(db, 'artifacts', appId, 'public', 'data', 'Jumlah Stok Sampel');
             onSnapshot(productsColRef, (snapshot) => {
-                products = snapshot.docs.map(doc => doc.data());
-                renderPageContent(); // Re-render to update products on dashboard/stock-out
+                products = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderPageContent();
             });
 
-            // Listen for public stock-out history changes
-            const stockOutColRef = collection(db, 'artifacts', appId, 'public', 'data', 'stockOutHistory');
+            const stockOutColRef = collection(db, 'artifacts', appId, 'public', 'data', 'Stok Keluar');
             onSnapshot(stockOutColRef, (snapshot) => {
                 stockOutHistory = snapshot.docs.map(doc => {
                     const data = doc.data();
                     const timestamp = data.timestamp ? data.timestamp.toDate() : new Date();
                     return { id: doc.id, ...data, timestamp: timestamp.toISOString() };
                 });
-                renderPageContent(); // Re-render to update stock-out history
+                renderPageContent();
             });
 
-            // Listen for public stock-in history changes
-            const stockInColRef = collection(db, 'artifacts', appId, 'public', 'data', 'stockInHistory');
+            const stockInColRef = collection(db, 'artifacts', appId, 'public', 'data', 'Data Stok Masuk');
             onSnapshot(stockInColRef, (snapshot) => {
                 stockInHistory = snapshot.docs.map(doc => {
                     const data = doc.data();
                     const timestamp = data.timestamp ? data.timestamp.toDate() : new Date();
                     return { id: doc.id, ...data, timestamp: timestamp.toISOString() };
                 });
-                renderPageContent(); // Re-render to update stock-in history
+                renderPageContent();
             });
         };
 
-        // Start the application after the window loads
         window.onload = initFirebase;
-
     </script>
 </body>
 </html>
