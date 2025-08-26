@@ -4,9 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manajemen Stok Sampel</title>
-    <!-- Tailwind CSS CDN for responsive and modern styling -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Library for downloading Excel files -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
@@ -32,7 +30,6 @@
 </head>
 <body class="antialiased text-gray-800">
 
-    <!-- Main UI content will be loaded here by JavaScript -->
     <div id="app-container" class="min-h-screen">
         <div class="flex items-center justify-center min-h-screen">
             <div class="text-center">
@@ -45,10 +42,8 @@
         </div>
     </div>
 
-    <!-- Admin Login Modal -->
     <div id="login-modal" class="modal-backdrop hidden">
         <div class="relative bg-white rounded-lg p-8 shadow-xl w-full max-w-sm">
-            <!-- Close button for the modal -->
             <button id="close-login-modal" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -73,7 +68,8 @@
     <script type="module">
         // Import Firebase modules
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // Perubahan: Mengganti signInAnonymously dengan signInWithPopup dan GoogleAuthProvider
+        import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, addDoc, serverTimestamp, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // Use global variables provided by the environment
@@ -93,6 +89,7 @@
         let auth;
         let db;
         let userId = '';
+        let userDisplayName = 'unauthenticated'; // Nama pengguna untuk ditampilkan
         let products = [];
         let stockInHistory = [];
         let stockOutHistory = [];
@@ -697,7 +694,10 @@
                             <div class="text-2xl font-bold text-indigo-600">
                                 Manajemen Stok Sampel
                             </div>
-                            <span class="text-xs text-gray-500">User ID: ${userId}</span>
+                            <span class="text-xs text-gray-500">User ID: ${userDisplayName}</span>
+                            <button id="google-login-btn" class="px-4 py-2 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 transition-colors duration-200">
+                                Login dengan Google
+                            </button>
                         </div>
                         <div class="flex flex-wrap justify-center sm:justify-start items-center space-x-2 sm:space-x-4">
                             <button data-page="dashboard" class="nav-btn px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${currentPage === 'dashboard' ? 'bg-indigo-500 text-white shadow-md' : 'text-gray-700 hover:bg-gray-200'}">
@@ -713,12 +713,30 @@
                     </nav>
                 </header>
                 <main class="container mx-auto px-4 py-8" id="main-content">
-                    <!-- Content will be loaded here -->
-                </main>
+                    </main>
             `;
             appContainer.innerHTML = html;
             addNavListeners();
+            setupGoogleLoginBtn(); // Setup tombol login Google
             renderPageContent();
+        };
+
+        const setupGoogleLoginBtn = () => {
+            const googleLoginBtn = document.getElementById('google-login-btn');
+            if (googleLoginBtn) {
+                googleLoginBtn.addEventListener('click', handleGoogleLogin);
+            }
+        };
+
+        // Function to handle Google login via popup
+        const handleGoogleLogin = async () => {
+            const provider = new GoogleAuthProvider();
+            try {
+                await signInWithPopup(auth, provider);
+            } catch (error) {
+                console.error("Error during Google sign-in:", error);
+                showCustomAlert("Gagal login dengan Google. Silakan coba lagi.", 'error');
+            }
         };
 
         // Function to render the active page content
@@ -813,19 +831,7 @@
                 auth = getAuth(app);
                 db = getFirestore(app);
                 
-                // Check if a custom auth token is available and try to sign in with it.
-                // This is the preferred method in the Canvas environment.
-                if (initialAuthToken) {
-                    console.log("Trying to sign in with custom token...");
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    console.log("No custom token found, attempting anonymous sign-in...");
-                    // This is the fallback if no token is provided.
-                    await signInAnonymously(auth);
-                }
             } catch (e) {
-                // If any sign-in method fails (e.g., invalid token, anonymous auth disabled),
-                // we catch the error and the onAuthStateChanged listener will handle the unauthenticated state.
                 console.error("Sign-in failed. This may be expected if the token is invalid or anonymous auth is disabled.", e.message);
             }
             
@@ -834,12 +840,24 @@
             onAuthStateChanged(auth, (user) => {
                 if (user) {
                     userId = user.uid;
+                    userDisplayName = user.displayName || user.email || user.uid; // Menggunakan nama, email, atau UID
                     isAuthReady = true;
                     console.log("User is authenticated. User ID:", userId);
+                    document.getElementById('google-login-btn').textContent = "Logout";
+                    document.getElementById('google-login-btn').classList.remove('bg-blue-600', 'hover:bg-blue-700');
+                    document.getElementById('google-login-btn').classList.add('bg-red-600', 'hover:bg-red-700');
+                    document.getElementById('google-login-btn').onclick = () => {
+                        auth.signOut();
+                    };
                 } else {
                     userId = 'unauthenticated';
+                    userDisplayName = 'unauthenticated';
                     isAuthReady = false;
                     console.log("User is not authenticated. Some features may be disabled.");
+                    document.getElementById('google-login-btn').textContent = "Login dengan Google";
+                    document.getElementById('google-login-btn').classList.remove('bg-red-600', 'hover:bg-red-700');
+                    document.getElementById('google-login-btn').classList.add('bg-blue-600', 'hover:bg-blue-700');
+                    document.getElementById('google-login-btn').onclick = handleGoogleLogin;
                 }
                 setupFirestoreListeners();
                 renderAppLayout();
