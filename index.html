@@ -105,6 +105,20 @@
         const loginForm = document.getElementById('login-form');
         const loginError = document.getElementById('login-error');
 
+        // New constant for the list of PICs
+        const picList = [
+            'Melani Angelina',
+            'Ronaldo',
+            'Roby',
+            'Wahyu Agung Widodo',
+            'Anita Bella',
+            'Nia',
+            'Elang',
+            'Yohanes Sinaga',
+            'April',
+            'Others'
+        ];
+
         // Function to show custom alerts instead of `alert()`
         const showCustomAlert = (message, type) => {
             const alertDiv = document.createElement('div');
@@ -252,7 +266,8 @@
 
             const form = e.target;
             const tanggal = form.querySelector('#tanggal-out').value;
-            const namaPIC = form.querySelector('#nama-pic').value;
+            const namaPICSelect = form.querySelector('#nama-pic');
+            const namaPIC = namaPICSelect.value === 'Others' ? form.querySelector('#nama-pic-others').value : namaPICSelect.value;
             const tujuan = form.querySelector('#tujuan').value;
             
             const outflowData = {
@@ -592,7 +607,8 @@
             
             return `
                 <div class="bg-white p-6 rounded-xl shadow-lg max-w-4xl mx-auto">
-                    <h2 class="text-2xl font-semibold mb-6">Order di Sini</h2>
+                    <h2 class="text-2xl font-semibold mb-1">Order di Sini</h2>
+                    <p class="text-red-500 text-sm mb-4">*Wajib mengisi per customer</p>
                     <form id="stock-out-form" class="space-y-4">
                         <div>
                             <label for="tanggal-out" class="block text-sm font-medium text-gray-700">Tanggal</label>
@@ -600,7 +616,13 @@
                         </div>
                         <div>
                             <label for="nama-pic" class="block text-sm font-medium text-gray-700">Nama PIC</label>
-                            <input type="text" id="nama-pic" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" />
+                            <select id="nama-pic" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                                ${picList.map(pic => `<option value="${pic}">${pic}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div id="pic-others-field" class="hidden">
+                            <label for="nama-pic-others" class="block text-sm font-medium text-gray-700">Nama PIC Lainnya</label>
+                            <input type="text" id="nama-pic-others" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" placeholder="Masukkan nama PIC"/>
                         </div>
                         <div>
                             <label for="tujuan" class="block text-sm font-medium text-gray-700">Untuk Apa?</label>
@@ -797,6 +819,16 @@
                                 <textarea id="deskripsi-lain" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"></textarea>
                             </div>
                         `;
+                    }
+                });
+                
+                // New event listener for PIC dropdown
+                document.getElementById('nama-pic').addEventListener('change', (e) => {
+                    const picOthersField = document.getElementById('pic-others-field');
+                    if (e.target.value === 'Others') {
+                        picOthersField.classList.remove('hidden');
+                    } else {
+                        picOthersField.classList.add('hidden');
                     }
                 });
                 addStockItem('stock-out-items-container', products);
